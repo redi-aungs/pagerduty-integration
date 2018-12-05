@@ -77,10 +77,10 @@ if not (args.acknowledge) and not (args.trigger) and not (args.resolve):
     INCIDENT_KEY = EnvData["_GATEWAY"] + "\\" + EnvData["_PROBE"] + "\\" + EnvData["_MANAGED_ENTITY"] + "\\" + EnvData["_SAMPLER"] + "\\" + EnvData["_DATAVIEW"] + "\\" + EnvData["_ROWNAME"] + "\\" + EnvData["_COLUMN"]
 elif (args.acknowledge):
     INCIDENT_KEY = (args.acknowledge)
-elif (args.trigger):
-    INCIDENT_KEY = (args.trigger)
 elif (args.resolve):
     INCIDENT_KEY = (args.resolve)
+# elif (args.trigger):
+#     INCIDENT_KEY = (args.trigger)
 # For Testing the script, in leiu of any proxy configuration to test against
  # export _GATEWAY="SomeGateway"
  # export _PROBE="SomeProbe"
@@ -100,6 +100,79 @@ human_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
 # Incident interactions
 def event_trigger_incident():
+    # Triggers a PagerDuty incident without a previously generated incident key
+    # Uses Events V2 API - documentation: https://v2.developer.pagerduty.com/docs/send-an-event-events-api-v2
+
+    header = {
+        "Content-Type": "application/json"
+    }
+
+    if(args.trigger):
+        payload = { # Payload is built with the least amount of fields required to trigger an incident
+        "routing_key": SERVICE_KEY,
+        "event_action": "trigger",
+        # "dedup_key": INCIDENT_KEY,
+        # "integration_key": INCIDENT_KEY,
+        "payload": {
+            "summary" : "Alerted from an Active Console",
+            "severity": "critical",
+            "source" : "Active Console",
+            "custom_details" : {
+                "Geneos Event Data" : {
+                    "HUMAN_TIME" : human_time,
+                    "UNIX_TIME" : unix_time
+                },
+                "Custom Message" : "Use custom detailed here Message"
+            }
+        }
+        }
+    else:
+        payload = { # Payload is built with the least amount of fields required to trigger an incident
+        "routing_key": SERVICE_KEY,
+        "event_action": "trigger",
+        "dedup_key": INCIDENT_KEY,
+        "payload": {
+            "summary" : "Alert on " + EnvData["_PROBE"] + "/" + EnvData["_HOSTNAME"] + " - Date: " + human_time + " - Row: " + EnvData["_ROWNAME"] + " : " + EnvData["_COLUMN"] + " at " + EnvData["_VALUE"],
+            "severity": "critical",
+            "source" : EnvData["_PROBE"] + "/" + EnvData["_HOSTNAME"],
+            "custom_details" : {
+                "Geneos Event Data" : {
+                    "HUMAN_TIME" : human_time,
+                    "UNIX_TIME" : unix_time,
+                    "_SEVERITY" : EnvData["_SEVERITY"]
+                },
+                "Custom Message" : "Use custom detailed here Message"
+            }
+        }
+        }
+
+    # Re-Cconstruct Payload for Geneos Event Data
+    for EnvKey in EnvData:
+        if EnvKey.startswith("_"):
+            payload["payload"]["custom_details"]["Geneos Event Data"][EnvKey] = EnvData[EnvKey]
+
+    # Run post to PagerDuty Server
+    PagerResponse = pagerduty_session.post('https://events.pagerduty.com/v2/enqueue',
+                            data=json.dumps(payload),
+                            headers=header)
+
+    # response.encoding = 'utf-8'
+    if PagerResponse.status_code != 202:
+        raise ValueError(
+            'Request to PagerDuty a server returned an error %s, the response is:\n%s'
+            % (PagerResponse.status_code, PagerResponse.text)
+            )
+
+    # If all is good
+    if PagerResponse.json()["status"] == "success":
+        print ('Incident Created')
+    else:
+        print PagerResponse.text # print error message if not successful
+
+    # Print json response info to the screen
+    print(json.dumps(PagerResponse.json(), indent=2))
+
+def cmd_trigger_incident():
     # Triggers a PagerDuty incident without a previously generated incident key
     # Uses Events V2 API - documentation: https://v2.developer.pagerduty.com/docs/send-an-event-events-api-v2
 
